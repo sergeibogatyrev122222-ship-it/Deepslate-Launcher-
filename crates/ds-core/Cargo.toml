@@ -1,0 +1,19 @@
+[package]
+name = "ds-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Pure Minecraft domain logic: rule evaluation, argument templating, classpath assembly"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json = "1"
+
+# Mojang's os.version rule field is a regex, and real manifests use one
+# (e.g. "^10\." to target Windows 10+). Approximating it with prefix matching
+# mis-evaluates rules on some versions, which silently changes which native
+# libraries get extracted.
+regex = "1"
