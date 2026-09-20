@@ -9,9 +9,11 @@
 pub mod assets;
 pub mod catalog;
 pub mod inherit;
+pub mod java;
 pub mod prepare;
 
 pub use assets::{AssetIndex, Layout};
 pub use catalog::{Catalog, CatalogError, VersionEntry, VersionList};
 pub use inherit::{merge, resolve, InheritError, ResolveError};
+pub use java::{JavaInstallation, Source as JavaSource};
 pub use prepare::{plan, prepare, Plan, Prepared};

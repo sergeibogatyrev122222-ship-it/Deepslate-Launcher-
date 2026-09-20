@@ -33,6 +33,7 @@ COMMANDS:
     versions [n]      List the newest releases from Mojang
     resolve <id>      Fetch a version, resolve inheritance, summarise it
     prepare <id>      Download everything a version needs
+    java [major]      List detected Java runtimes, or pick one for a major version
 ";
 
 /// `%APPDATA%/Deepslate` on Windows, the platform equivalent elsewhere.
@@ -64,6 +65,7 @@ async fn main() -> ExitCode {
         (Some("resolve"), None) => Err("that command needs a version id".to_owned()),
         (Some("prepare"), Some(id)) => prepare_version(id).await,
         (Some("prepare"), None) => Err("that command needs a version id".to_owned()),
+        (Some("java"), major) => java_runtimes(major.map(String::as_str)),
         (Some("logout"), Some(id)) => logout(id),
         (Some("switch"), Some(id)) => switch(id),
         (Some("logout" | "switch"), None) => Err("that command needs an account uuid".to_owned()),
@@ -245,6 +247,44 @@ async fn prepare_version(id: &str) -> Result<(), String> {
     println!("cache now      : {}", mib(after));
     println!("fetched this run: {}", mib(after.saturating_sub(before)));
     println!("store          : {}", store.root().display());
+    Ok(())
+}
+
+fn java_runtimes(major: Option<&str>) -> Result<(), String> {
+    let found = ds_mc::java::discover();
+
+    if found.is_empty() {
+        println!("No Java runtimes found.");
+        return Ok(());
+    }
+
+    println!("{} runtime(s) found:", found.len());
+    for installation in &found {
+        println!(
+            "  Java {:<3} {:<12} {:<16} {}",
+            installation.major,
+            installation.version,
+            format!("{:?}", installation.source),
+            installation.executable.display()
+        );
+    }
+
+    if let Some(major) = major {
+        let wanted: u32 = major
+            .parse()
+            .map_err(|_| format!("'{major}' is not a major version"))?;
+        println!();
+        match ds_mc::java::select(&found, wanted) {
+            Some(chosen) => println!(
+                "for Java {wanted}: {} ({})",
+                chosen.executable.display(),
+                chosen.version
+            ),
+            None => {
+                println!("for Java {wanted}: nothing installed matches - it would be downloaded")
+            }
+        }
+    }
     Ok(())
 }
 
