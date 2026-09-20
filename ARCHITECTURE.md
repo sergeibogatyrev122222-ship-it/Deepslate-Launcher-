@@ -172,10 +172,16 @@ GC is reference-counted by scanning instance manifests, never by mtime heuristic
 ### 5.2 Instance isolation
 
 Isolation is enforced by construction, not convention: the game's working directory is
-`instances/<slug>/minecraft/`, and `-Duser.home` plus the game's own `--gameDir` are set so
-nothing resolves outside it. Two instances sharing a version share *CAS objects* — which are
-immutable and hash-verified — and share nothing mutable. A mod writing to its config
-directory in instance A is physically incapable of reaching instance B.
+`instances/<slug>/minecraft/`, and the game's own `--gameDir` points at the same place. Two
+instances sharing a version share *CAS objects* — which are immutable and hash-verified —
+and share nothing mutable. A mod writing to its config directory in instance A cannot reach
+instance B.
+
+**`-Duser.home` is deliberately not set**, though an earlier draft of this document said it
+was. It would catch the small number of mods that write to the home directory instead of the
+game directory, but it also redirects JVM internals — preferences, certificate stores,
+temporary files — and no major launcher sets it by default. The trade is not obviously worth
+it; revisit if a real mod is found escaping.
 
 ## 6. Data flow
 

@@ -34,6 +34,9 @@ COMMANDS:
     resolve <id>      Fetch a version, resolve inheritance, summarise it
     prepare <id>      Download everything a version needs
     java [major]      List detected Java runtimes, or pick one for a major version
+    instances         List instances
+    new <name> <ver>  Create an instance
+    dry-run <slug>    Build the launch command for an instance and print it
 ";
 
 /// `%APPDATA%/Deepslate` on Windows, the platform equivalent elsewhere.
@@ -66,6 +69,11 @@ async fn main() -> ExitCode {
         (Some("prepare"), Some(id)) => prepare_version(id).await,
         (Some("prepare"), None) => Err("that command needs a version id".to_owned()),
         (Some("java"), major) => java_runtimes(major.map(String::as_str)),
+        (Some("instances"), _) => list_instances(),
+        (Some("new"), Some(name)) => new_instance(name, args.get(2).map(String::as_str)),
+        (Some("new"), None) => Err("that command needs a name and a version".to_owned()),
+        (Some("dry-run"), Some(slug)) => dry_run(slug).await,
+        (Some("dry-run"), None) => Err("that command needs an instance slug".to_owned()),
         (Some("logout"), Some(id)) => logout(id),
         (Some("switch"), Some(id)) => switch(id),
         (Some("logout" | "switch"), None) => Err("that command needs an account uuid".to_owned()),
@@ -290,6 +298,157 @@ fn java_runtimes(major: Option<&str>) -> Result<(), String> {
             }
         }
     }
+    Ok(())
+}
+
+fn instances_dir() -> Result<PathBuf, String> {
+    Ok(data_dir()?.join("instances"))
+}
+
+fn list_instances() -> Result<(), String> {
+    let all = ds_mc::Instance::list(&instances_dir()?);
+    if all.is_empty() {
+        println!("No instances. Create one with: ds new <name> <version>");
+        return Ok(());
+    }
+    for instance in &all {
+        println!(
+            "  {:<20} {:<12} {}",
+            instance.slug(),
+            instance.config().version,
+            instance.root().display()
+        );
+    }
+    Ok(())
+}
+
+fn new_instance(name: &str, version: Option<&str>) -> Result<(), String> {
+    let version = version.ok_or("that command needs a version, e.g. ds new Test 1.21.11")?;
+    let root = instances_dir()?;
+    std::fs::create_dir_all(&root).map_err(|e| e.to_string())?;
+
+    let instance = ds_mc::Instance::create(&root, ds_mc::InstanceConfig::new(name, version))
+        .map_err(|e| e.to_string())?;
+
+    println!("Created '{}' ({})", instance.slug(), version);
+    println!("  game dir : {}", instance.game_dir().display());
+    println!("  natives  : {}", instance.natives_dir().display());
+    println!("  settings : {}", instance.config_path().display());
+    Ok(())
+}
+
+/// Build the exact command an instance would launch with, and print it.
+///
+/// Does not start the game: that needs a real session, which needs Mojang to
+/// approve the app registration. Everything up to the spawn is verifiable now.
+async fn dry_run(slug: &str) -> Result<(), String> {
+    let instance = ds_mc::Instance::load(&instances_dir()?, slug).map_err(|e| e.to_string())?;
+    let version_id = instance.config().version.clone();
+
+    let store = Store::open(cache_dir()?).map_err(|e| e.to_string())?;
+    let downloader = Downloader::default();
+    let catalog = Catalog::load(&downloader)
+        .await
+        .map_err(|e| e.to_string())?;
+    let manifest = catalog
+        .resolved(&downloader, &store, &version_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let platform = Platform::host().ok_or("unsupported platform")?;
+    let features = Features::new();
+
+    let required = manifest
+        .java_version
+        .as_ref()
+        .map(|j| j.major_version)
+        .unwrap_or(8);
+    let runtimes = ds_mc::java::discover();
+    let java = ds_mc::java::select(&runtimes, required)
+        .ok_or_else(|| format!("no Java {required} installed; it would be downloaded"))?;
+
+    let work = ds_mc::plan(&manifest, &platform, &features);
+    let mut classpath: Vec<PathBuf> = Vec::new();
+    for artifact in &work.libraries {
+        classpath.push(
+            store
+                .path_for(&artifact.hash, ds_store::Algorithm::Sha1)
+                .map_err(|e| e.to_string())?,
+        );
+    }
+    if let Some(client) = &work.client {
+        classpath.push(
+            store
+                .path_for(&client.hash, ds_store::Algorithm::Sha1)
+                .map_err(|e| e.to_string())?,
+        );
+    }
+
+    // A placeholder session. This build has no path that launches the game with
+    // one: the command is printed, never spawned.
+    let session = ds_mc::Session {
+        username: "<player>".to_owned(),
+        uuid: "<uuid>".to_owned(),
+        access_token: "<token>".to_owned(),
+        user_type: "msa".to_owned(),
+        xuid: None,
+    };
+
+    let assets_root = store.root().join("assets");
+    let command = ds_mc::launch::build(
+        &manifest,
+        &ds_mc::LaunchContext {
+            java: &java.executable,
+            instance: &instance,
+            session: &session,
+            classpath: &classpath,
+            assets_root: &assets_root,
+            assets_index: manifest.assets.as_deref().unwrap_or("legacy"),
+            platform: &platform,
+        },
+    )
+    .map_err(|e| e.to_string())?;
+
+    println!("instance   : {} ({})", instance.slug(), version_id);
+    println!(
+        "java       : {} (Java {})",
+        java.executable.display(),
+        java.major
+    );
+    println!("classpath  : {} entries", classpath.len());
+    println!("working dir: {}", command.working_dir.display());
+    println!("arguments  : {} total", command.args.len());
+    println!();
+
+    let redacted = command.redacted(&session);
+    let main = redacted
+        .iter()
+        .position(|a| Some(a.as_str()) == manifest.main_class.as_deref());
+
+    println!("--- JVM arguments ---");
+    for arg in &redacted[..main.unwrap_or(0)] {
+        // The classpath is thousands of characters; show its shape instead.
+        if arg.len() > 120 {
+            println!(
+                "  <{} chars: {} entries>",
+                arg.len(),
+                arg.matches(';').count() + 1
+            );
+        } else {
+            println!("  {arg}");
+        }
+    }
+    if let Some(main) = main {
+        println!("--- main class ---");
+        println!("  {}", redacted[main]);
+        println!("--- game arguments ---");
+        for arg in &redacted[main + 1..] {
+            println!("  {arg}");
+        }
+    }
+
+    println!();
+    println!("Not launched: that needs a real session token.");
     Ok(())
 }
 
