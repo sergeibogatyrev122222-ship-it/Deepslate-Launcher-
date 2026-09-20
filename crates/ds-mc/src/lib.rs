@@ -6,6 +6,8 @@
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod catalog;
 pub mod inherit;
 
+pub use catalog::{Catalog, CatalogError, VersionEntry, VersionList};
 pub use inherit::{merge, resolve, InheritError, ResolveError};

@@ -82,12 +82,22 @@ impl Coordinate {
         )
     }
 
-    /// `group:artifact`, ignoring version and classifier.
+    /// `group:artifact[:classifier]`, ignoring only the version.
     ///
-    /// Two libraries sharing this identity are the same dependency at different
+    /// Two libraries sharing this identity are the same artifact at different
     /// versions, and only one may be on the classpath.
+    ///
+    /// **The classifier is part of the identity, not an attribute of it.**
+    /// Modern manifests ship natives as ordinary libraries distinguished only
+    /// by classifier, so `org.lwjgl:lwjgl-glfw:3.3.3` and
+    /// `org.lwjgl:lwjgl-glfw:3.3.3:natives-windows` are different artifacts and
+    /// both must be present. Keying on `group:artifact` alone silently dropped
+    /// 25 of 1.21.11's 75 applicable Windows libraries - every native jar.
     pub fn identity(&self) -> String {
-        format!("{}:{}", self.group, self.artifact)
+        match &self.classifier {
+            Some(classifier) => format!("{}:{}:{classifier}", self.group, self.artifact),
+            None => format!("{}:{}", self.group, self.artifact),
+        }
     }
 }
 
@@ -280,6 +290,39 @@ mod tests {
         let got = entries(&m, &windows(), &Features::new(), None).unwrap();
         assert_eq!(got.len(), 1, "both versions ended up on the classpath");
         assert!(got[0].contains("33.0.0"), "the wrong version won: {got:?}");
+    }
+
+    /// Regression, found by resolving the real 1.21.11 against Mojang: the
+    /// dedup key used to be group:artifact, which treated a natives jar as a
+    /// duplicate of the plain jar and dropped it. Both must survive.
+    #[test]
+    fn a_natives_jar_is_not_a_duplicate_of_its_plain_jar() {
+        let m = manifest_with(
+            r#"{"name":"org.lwjgl:lwjgl-glfw:3.3.3"},
+               {"name":"org.lwjgl:lwjgl-glfw:3.3.3:natives-windows"}"#,
+        );
+        let got = entries(&m, &windows(), &Features::new(), None).unwrap();
+
+        assert_eq!(got.len(), 2, "the natives jar was dropped: {got:?}");
+        assert!(
+            got.iter().any(|e| e.ends_with("lwjgl-glfw-3.3.3.jar")),
+            "{got:?}"
+        );
+        assert!(
+            got.iter()
+                .any(|e| e.ends_with("lwjgl-glfw-3.3.3-natives-windows.jar")),
+            "{got:?}"
+        );
+    }
+
+    /// Overriding must still work: same artifact, no classifier, two versions -
+    /// only the first survives.
+    #[test]
+    fn version_overrides_still_deduplicate() {
+        let m = manifest_with(r#"{"name":"org.ow2.asm:asm:9.8"},{"name":"org.ow2.asm:asm:9.6"}"#);
+        let got = entries(&m, &windows(), &Features::new(), None).unwrap();
+        assert_eq!(got.len(), 1, "{got:?}");
+        assert!(got[0].contains("9.8"));
     }
 
     #[test]

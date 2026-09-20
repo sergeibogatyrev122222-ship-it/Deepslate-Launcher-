@@ -33,3 +33,7 @@ specta-typescript = "=0.0.12"
 ds-auth = { version = "0.1.0", path = "../ds-auth" }
 tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }
 dirs = "7.0.0"
+ds-mc = { version = "0.1.0", path = "../ds-mc" }
+ds-net = { version = "0.1.0", path = "../ds-net" }
+ds-store = { version = "0.1.0", path = "../ds-store" }
+ds-core = { version = "0.1.0", path = "../ds-core" }

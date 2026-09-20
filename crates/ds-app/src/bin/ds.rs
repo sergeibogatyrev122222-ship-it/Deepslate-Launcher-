@@ -12,6 +12,11 @@ use std::process::ExitCode;
 
 use ds_auth::store::{AccountStore, Keychain};
 use ds_auth::{AuthError, Flow};
+use ds_core::platform::Platform;
+use ds_core::rules::Features;
+use ds_mc::Catalog;
+use ds_net::Downloader;
+use ds_store::Store;
 
 const USAGE: &str = "\
 ds - Deepslate development CLI
@@ -25,6 +30,8 @@ COMMANDS:
     accounts          List stored accounts
     logout <uuid>     Forget an account and destroy its stored credential
     switch <uuid>     Make an account the active one
+    versions [n]      List the newest releases from Mojang
+    resolve <id>      Fetch a version, resolve inheritance, summarise it
 ";
 
 /// `%APPDATA%/Deepslate` on Windows, the platform equivalent elsewhere.
@@ -51,6 +58,9 @@ async fn main() -> ExitCode {
         (Some("login"), _) => login().await,
         (Some("whoami"), _) => whoami().await,
         (Some("accounts"), _) => accounts(),
+        (Some("versions"), count) => versions(count.map(String::as_str)).await,
+        (Some("resolve"), Some(id)) => resolve_version(id).await,
+        (Some("resolve"), None) => Err("that command needs a version id".to_owned()),
         (Some("logout"), Some(id)) => logout(id),
         (Some("switch"), Some(id)) => switch(id),
         (Some("logout" | "switch"), None) => Err("that command needs an account uuid".to_owned()),
@@ -68,6 +78,90 @@ async fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn cache_dir() -> Result<PathBuf, String> {
+    dirs::cache_dir()
+        .map(|dir| dir.join("Deepslate"))
+        .ok_or_else(|| "could not determine this platform's cache directory".to_owned())
+}
+
+async fn versions(count: Option<&str>) -> Result<(), String> {
+    let limit: usize = count.unwrap_or("15").parse().unwrap_or(15);
+
+    let downloader = Downloader::default();
+    let catalog = Catalog::load(&downloader)
+        .await
+        .map_err(|e| e.to_string())?;
+    let list = catalog.list();
+
+    println!("latest release  : {}", list.latest.release);
+    println!("latest snapshot : {}", list.latest.snapshot);
+    println!("known versions  : {}", list.versions.len());
+    println!();
+
+    for entry in list.releases().into_iter().take(limit) {
+        println!("  {:<12} {}", entry.id, &entry.release_time[..10]);
+    }
+    Ok(())
+}
+
+async fn resolve_version(id: &str) -> Result<(), String> {
+    let store = Store::open(cache_dir()?).map_err(|e| e.to_string())?;
+    let downloader = Downloader::default();
+
+    println!("Fetching the version list...");
+    let catalog = Catalog::load(&downloader)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    println!("Resolving {id}...");
+    let manifest = catalog
+        .resolved(&downloader, &store, id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let platform = Platform::host().ok_or("unsupported platform")?;
+    let features = Features::new();
+    let applicable = manifest.applicable_libraries(&platform, &features);
+
+    println!();
+    println!("id            : {}", manifest.id);
+    println!("type          : {}", manifest.kind);
+    println!("released      : {}", manifest.release_time);
+    println!(
+        "main class    : {}",
+        manifest.main_class.as_deref().unwrap_or("(none)")
+    );
+    match &manifest.java_version {
+        Some(java) => println!(
+            "java          : {} (major {})",
+            java.component, java.major_version
+        ),
+        None => println!("java          : not declared, defaults to 8"),
+    }
+    println!(
+        "assets        : {}",
+        manifest.assets.as_deref().unwrap_or("(none)")
+    );
+    println!("legacy assets : {}", manifest.uses_legacy_assets());
+    println!(
+        "libraries     : {} total, {} apply on {}",
+        manifest.libraries.len(),
+        applicable.len(),
+        platform.os
+    );
+
+    match manifest.client_download() {
+        Some(client) => println!("client jar    : {:.1} MB", client.size as f64 / 1_048_576.0),
+        None => println!("client jar    : (none declared)"),
+    }
+
+    let classpath = ds_core::classpath::entries(&manifest, &platform, &features, None)
+        .map_err(|e| e.to_string())?;
+    println!("classpath     : {} entries", classpath.len());
+    println!("cache         : {}", store.root().display());
+    Ok(())
 }
 
 async fn login() -> Result<(), String> {

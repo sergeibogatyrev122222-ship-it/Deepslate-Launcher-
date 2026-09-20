@@ -1085,6 +1085,10 @@ version = "0.1.0"
 dependencies = [
  "dirs 7.0.0",
  "ds-auth",
+ "ds-core",
+ "ds-mc",
+ "ds-net",
+ "ds-store",
  "serde",
  "specta",
  "specta-typescript",
