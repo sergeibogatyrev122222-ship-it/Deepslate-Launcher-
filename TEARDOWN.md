@@ -16,13 +16,19 @@ somewhere safe **before** running any of this.
 | 3 | VS installer package cache | `C:\ProgramData\Microsoft\VisualStudio\Packages\` | ~1–2 GB | **Yes** |
 | 4 | Node modules | `deepslate\ui\node_modules\` | 94 MB | No |
 | 5 | Rust build artifacts | `deepslate\target\` | 4.6 GB and growing | No |
+| 6 | Downloaded game files | `%LOCALAPPDATA%\Deepslate\` | grows per version prepared (1.21.11 alone is ~530 MB) | No |
 
 w64devkit (the failed MinGW spike, 708 MB) was installed during M0 and **already removed** —
 it is listed here only so the record is complete.
 
 Nothing was added to the system `PATH`. Rust lives entirely under `tools\rust` via
 `RUSTUP_HOME` / `CARGO_HOME` (see `env.sh`), matching the portable Maven/Gradle layout
-already in `C:\Users\serge\tools`. That is why items 1, 2, 5 and 6 are folder deletes.
+already in `C:\Users\serge\tools`. That is why items 1, 4, 5 and 6 are folder deletes.
+
+**Item 6 is a cache and nothing in it is unique** — every file is re-downloadable from
+Mojang and verified by hash. Your saves, configs and mods are not in there; those live in
+instance directories under `%APPDATA%\Deepslate\instances\`, which this teardown does
+**not** touch.
 
 ## Before you tear down
 
@@ -42,7 +48,11 @@ they are gone.
 ```powershell
 Remove-Item -Recurse -Force "C:\Claude plugins\deepslate\target"
 Remove-Item -Recurse -Force "C:\Claude plugins\deepslate\ui\node_modules"
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Deepslate"
 ```
+
+That last line is the downloaded game cache. Safe to delete at any time, not only at
+teardown — it costs a re-download and nothing else.
 
 ### Step 2 — Rust (no elevation)
 

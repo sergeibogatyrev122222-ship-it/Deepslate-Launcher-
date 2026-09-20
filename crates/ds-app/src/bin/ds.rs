@@ -32,6 +32,7 @@ COMMANDS:
     switch <uuid>     Make an account the active one
     versions [n]      List the newest releases from Mojang
     resolve <id>      Fetch a version, resolve inheritance, summarise it
+    prepare <id>      Download everything a version needs
 ";
 
 /// `%APPDATA%/Deepslate` on Windows, the platform equivalent elsewhere.
@@ -61,6 +62,8 @@ async fn main() -> ExitCode {
         (Some("versions"), count) => versions(count.map(String::as_str)).await,
         (Some("resolve"), Some(id)) => resolve_version(id).await,
         (Some("resolve"), None) => Err("that command needs a version id".to_owned()),
+        (Some("prepare"), Some(id)) => prepare_version(id).await,
+        (Some("prepare"), None) => Err("that command needs a version id".to_owned()),
         (Some("logout"), Some(id)) => logout(id),
         (Some("switch"), Some(id)) => switch(id),
         (Some("logout" | "switch"), None) => Err("that command needs an account uuid".to_owned()),
@@ -161,6 +164,87 @@ async fn resolve_version(id: &str) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     println!("classpath     : {} entries", classpath.len());
     println!("cache         : {}", store.root().display());
+    Ok(())
+}
+
+fn mib(bytes: u64) -> String {
+    format!("{:.1} MB", bytes as f64 / 1_048_576.0)
+}
+
+async fn prepare_version(id: &str) -> Result<(), String> {
+    let store = Store::open(cache_dir()?).map_err(|e| e.to_string())?;
+    let downloader = Downloader::default();
+
+    let catalog = Catalog::load(&downloader)
+        .await
+        .map_err(|e| e.to_string())?;
+    let manifest = catalog
+        .resolved(&downloader, &store, id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let platform = Platform::host().ok_or("unsupported platform")?;
+    let features = Features::new();
+
+    let before = store.size_on_disk().unwrap_or(0);
+    let work = ds_mc::plan(&manifest, &platform, &features);
+    println!(
+        "{id}: {} libraries, {} natives, client jar {}",
+        work.libraries.len(),
+        work.natives.len(),
+        work.client
+            .as_ref()
+            .map(|c| mib(c.size))
+            .unwrap_or_else(|| "none".into())
+    );
+    println!("Fetching asset index and downloading...");
+
+    let started = std::time::Instant::now();
+    let mut last = 0_u64;
+
+    let prepared = ds_mc::prepare(
+        &downloader,
+        &store,
+        manifest,
+        &platform,
+        &features,
+        |progress| {
+            // One line every 250 files: enough to see movement, not enough to
+            // make the terminal the bottleneck.
+            if progress.completed - last >= 250 || progress.completed == progress.total {
+                last = progress.completed;
+                println!("  {} / {} files", progress.completed, progress.total);
+            }
+        },
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let elapsed = started.elapsed();
+    let after = store.size_on_disk().unwrap_or(0);
+
+    println!();
+    println!("done in {:.1}s", elapsed.as_secs_f64());
+    println!("classpath      : {} entries", prepared.classpath.len());
+    println!("native jars    : {}", prepared.native_jars.len());
+
+    match (&prepared.asset_index, &prepared.asset_index_id) {
+        (Some(index), Some(index_id)) => {
+            println!(
+                "assets         : {} objects, {} distinct, {} ({:?} layout, index {index_id})",
+                index.objects.len(),
+                index.artifacts().len(),
+                mib(index.total_size()),
+                index.layout()
+            );
+        }
+        _ => println!("assets         : none declared"),
+    }
+
+    println!("cache was      : {}", mib(before));
+    println!("cache now      : {}", mib(after));
+    println!("fetched this run: {}", mib(after.saturating_sub(before)));
+    println!("store          : {}", store.root().display());
     Ok(())
 }
 

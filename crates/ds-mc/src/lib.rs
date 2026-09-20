@@ -6,8 +6,12 @@
 
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
+pub mod assets;
 pub mod catalog;
 pub mod inherit;
+pub mod prepare;
 
+pub use assets::{AssetIndex, Layout};
 pub use catalog::{Catalog, CatalogError, VersionEntry, VersionList};
 pub use inherit::{merge, resolve, InheritError, ResolveError};
+pub use prepare::{plan, prepare, Plan, Prepared};

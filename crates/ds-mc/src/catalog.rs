@@ -36,6 +36,9 @@ pub enum CatalogError {
 
     #[error(transparent)]
     Inherit(#[from] crate::inherit::InheritError),
+
+    #[error(transparent)]
+    Store(#[from] ds_store::StoreError),
 }
 
 type Result<T> = std::result::Result<T, CatalogError>;
