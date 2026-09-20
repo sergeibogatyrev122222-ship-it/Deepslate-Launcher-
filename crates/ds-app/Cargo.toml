@@ -30,3 +30,6 @@ tauri = { version = "2.11.6", features = [] }
 tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
 specta = "=2.0.0-rc.25"
 specta-typescript = "=0.0.12"
+ds-auth = { version = "0.1.0", path = "../ds-auth" }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }
+dirs = "7.0.0"
