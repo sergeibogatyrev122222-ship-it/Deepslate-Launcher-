@@ -17,6 +17,7 @@
 pub mod app_id;
 pub mod endpoints;
 pub mod error;
+pub mod flow;
 pub mod loopback;
 pub mod minecraft;
 pub mod msa;
@@ -26,5 +27,7 @@ pub mod xbox;
 
 pub use endpoints::Endpoints;
 pub use error::{AuthError, Result, Stage};
+pub use flow::{Flow, SignedIn};
 pub use minecraft::{McSession, Profile};
+pub use store::{Account, AccountStore, Keychain};
 pub use xbox::XboxToken;

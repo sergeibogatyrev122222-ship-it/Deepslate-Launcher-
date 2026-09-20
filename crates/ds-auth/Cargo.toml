@@ -10,6 +10,7 @@ workspace = true
 
 [dependencies]
 base64 = "0.23.1"
+open = "5.4.4"
 rand = "0.10.3"
 # `form` is needed for the OAuth token endpoint, which takes
 # application/x-www-form-urlencoded rather than JSON.

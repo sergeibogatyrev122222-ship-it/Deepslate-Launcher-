@@ -259,9 +259,9 @@ mod tests {
         let port = server.port();
         let state = State::generate();
 
-        tokio::spawn(async move {
-            get(port, "/?error=access_denied&error_description=nope").await
-        });
+        tokio::spawn(
+            async move { get(port, "/?error=access_denied&error_description=nope").await },
+        );
 
         let err = server
             .wait_for_code(&state, Duration::from_secs(5))
