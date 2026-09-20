@@ -12,7 +12,7 @@ Running state of the build. Updated as work lands, so picking this up cold costs
 |---|---|
 | M0 — foundation, budgets | **Done.** Window runs, budgets measured and passing |
 | M1 — Microsoft sign-in | **Code complete, not verified live.** Blocked on Mojang approval |
-| M2 — vanilla launch | **In progress.** Pure half (`ds-core`) done; I/O half not started |
+| M2 — vanilla launch | **In progress.** `ds-core` and `ds-store` done; `ds-net`, `ds-mc`, Java and launch remain |
 | M3 — design system + UI | Not started |
 | M4 — mod loaders | Not started |
 | M5 — content browser (Modrinth) | Not started |
@@ -54,7 +54,7 @@ accounts, public client, loopback redirect URIs registered.
 
 ---
 
-## What `ds-core` covers (M2, pure half)
+## What is built for M2 so far
 
 Zero I/O, so all of it is tested directly with no mock server.
 
@@ -69,6 +69,9 @@ Zero I/O, so all of it is tested directly with no mock server.
   coordinate-to-path derivation that mod loader libraries depend on.
 - **`platform`** — OS/arch as an injectable value, so rules can be evaluated for every
   platform from one test run.
+- **`ds-store`** — the content-addressed store. `objects/<aa>/<hash>`; the filesystem is
+  the index, so there is no database. Verifies before admitting, stages writes through a
+  rename, hard links into instances with a copy fallback.
 
 ---
 
@@ -76,16 +79,16 @@ Zero I/O, so all of it is tested directly with no mock server.
 
 1. **`ds-net`** — HTTP client with pooling, retry/backoff and resumable range requests.
    The only remaining piece before real files can be fetched.
-3. **`ds-mc`** — manifest fetch and cache, `inheritsFrom` resolution (with cycle detection),
+2. **`ds-mc`** — manifest fetch and cache, `inheritsFrom` resolution (with cycle detection),
    asset index handling including the `legacy` and `pre-1.6` layouts.
    **Note the contract in `classpath::entries`:** whoever merges an inheritance chain must
    place the overriding manifest's libraries first, because first occurrence of a
    `group:artifact` wins.
-4. **Java** — discovery including Mojang's own runtime directories
+3. **Java** — discovery including Mojang's own runtime directories
    (`%LOCALAPPDATA%/Packages/Microsoft.4297127D64EC6_*/LocalCache/Local/runtime` already
    holds `java-runtime-delta` and `java-runtime-epsilon` on this machine), then download
    when nothing satisfies the version's requirement.
-5. **Launch** — build the argument vector and spawn. Done when 1.21.11, 26.2 and one
+4. **Launch** — build the argument vector and spawn. Done when 1.21.11, 26.2 and one
    `pre-1.6`-era version all reach the main menu.
 
 ---
