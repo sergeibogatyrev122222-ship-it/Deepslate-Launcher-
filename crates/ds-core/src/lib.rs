@@ -12,11 +12,13 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used, clippy::panic))]
 
 pub mod args;
+pub mod classpath;
 pub mod platform;
 pub mod rules;
 pub mod version;
 
 pub use args::{Argument, Substitutions};
+pub use classpath::{separator, Coordinate};
 pub use platform::{Arch, Os, Platform};
 pub use rules::{evaluate, Action, Features, Rule};
 pub use version::{JavaVersion, Library, VersionManifest};
