@@ -86,6 +86,11 @@ async fn main() -> ExitCode {
 }
 
 fn cache_dir() -> Result<PathBuf, String> {
+    // Overridable so a benchmark can run against a throwaway store rather than
+    // the real cache, where everything would already be present.
+    if let Ok(dir) = std::env::var("DEEPSLATE_CACHE") {
+        return Ok(PathBuf::from(dir));
+    }
     dirs::cache_dir()
         .map(|dir| dir.join("Deepslate"))
         .ok_or_else(|| "could not determine this platform's cache directory".to_owned())
