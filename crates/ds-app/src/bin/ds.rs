@@ -364,8 +364,10 @@ async fn dry_run(slug: &str) -> Result<(), String> {
         .map(|j| j.major_version)
         .unwrap_or(8);
     let runtimes = ds_mc::java::discover();
-    let java = ds_mc::java::select(&runtimes, required)
-        .ok_or_else(|| format!("no Java {required} installed; it would be downloaded"))?;
+    let java =
+        ds_mc::java::for_instance(instance.config().java_path.as_deref(), &runtimes, required)
+            .ok_or_else(|| format!("no Java {required} installed; it would be downloaded"))?
+            .to_path_buf();
 
     let work = ds_mc::plan(&manifest, &platform, &features);
     let mut classpath: Vec<PathBuf> = Vec::new();
@@ -398,7 +400,7 @@ async fn dry_run(slug: &str) -> Result<(), String> {
     let command = ds_mc::launch::build(
         &manifest,
         &ds_mc::LaunchContext {
-            java: &java.executable,
+            java: &java,
             instance: &instance,
             session: &session,
             classpath: &classpath,
@@ -410,11 +412,7 @@ async fn dry_run(slug: &str) -> Result<(), String> {
     .map_err(|e| e.to_string())?;
 
     println!("instance   : {} ({})", instance.slug(), version_id);
-    println!(
-        "java       : {} (Java {})",
-        java.executable.display(),
-        java.major
-    );
+    println!("java       : {} (needs Java {required})", java.display());
     println!("classpath  : {} entries", classpath.len());
     println!("working dir: {}", command.working_dir.display());
     println!("arguments  : {} total", command.args.len());

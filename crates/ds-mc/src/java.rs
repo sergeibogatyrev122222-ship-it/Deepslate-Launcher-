@@ -260,6 +260,23 @@ fn version_key(version: &str) -> Vec<u32> {
         .collect()
 }
 
+/// Pick the runtime for an instance, honouring an explicit override.
+///
+/// An override is trusted without checking its version. Someone who has set an
+/// exact path has said what they want; second-guessing it would make the
+/// setting useless for the cases it exists for - testing a JDK build, or a
+/// runtime this scan does not know how to find.
+pub fn for_instance<'a>(
+    override_path: Option<&'a Path>,
+    installed: &'a [JavaInstallation],
+    required: u32,
+) -> Option<&'a Path> {
+    if let Some(path) = override_path {
+        return Some(path);
+    }
+    select(installed, required).map(|installation| installation.executable.as_path())
+}
+
 const fn source_rank(source: Source) -> u8 {
     match source {
         Source::Managed => 3,
@@ -389,6 +406,32 @@ mod tests {
         assert!(version_key("21.0.2") < version_key("21.0.11"));
         assert!(version_key("1.8.0_412") > version_key("1.8.0_92"));
         assert_eq!(version_key("17.0.9+9"), vec![17, 0, 9, 9]);
+    }
+
+    /// The field exists to be obeyed. An override wins even over a matching
+    /// installation, and even when nothing matches at all.
+    #[test]
+    fn an_explicit_java_path_overrides_discovery() {
+        let installed = vec![installation(21, "21.0.11", Source::SystemInstall)];
+        let chosen = Path::new("D:/custom/jdk/bin/java.exe");
+
+        assert_eq!(
+            for_instance(Some(chosen), &installed, 21),
+            Some(chosen),
+            "an override lost to a matching installation"
+        );
+        assert_eq!(
+            for_instance(Some(chosen), &installed, 8),
+            Some(chosen),
+            "an override was discarded because nothing else matched"
+        );
+    }
+
+    #[test]
+    fn without_an_override_discovery_decides() {
+        let installed = vec![installation(21, "21.0.11", Source::SystemInstall)];
+        assert!(for_instance(None, &installed, 21).is_some());
+        assert!(for_instance(None, &installed, 8).is_none());
     }
 
     #[test]

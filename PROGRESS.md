@@ -2,7 +2,7 @@
 
 Running state of the build. Updated as work lands, so picking this up cold costs nothing.
 
-**Last updated:** 2026-09-20.
+**Last updated:** 2026-09-20, end of second session.
 
 ---
 
@@ -12,7 +12,7 @@ Running state of the build. Updated as work lands, so picking this up cold costs
 |---|---|
 | M0 — foundation, budgets | **Done.** Window runs, budgets measured and passing |
 | M1 — Microsoft sign-in | **Code complete, not verified live.** Blocked on Mojang approval |
-| M2 — vanilla launch | **In progress.** A version's files download completely and Java is detected; natives extraction and the spawn remain |
+| M2 — vanilla launch | **Nearly done.** Files download, Java is detected, instances are isolated, and the exact launch command builds and spawns. Only natives extraction, Java download, and the live launch remain |
 | M3 — design system + UI | Not started |
 | M4 — mod loaders | Not started |
 | M5 — content browser (Modrinth) | Not started |
@@ -21,7 +21,7 @@ Running state of the build. Updated as work lands, so picking this up cold costs
 | M8 — customization | Not started |
 | M9 — CurseForge, Linux, teardown | Not started |
 
-**186 tests passing, zero clippy warnings, `tsc` clean.**
+**214 tests passing, zero clippy warnings, `tsc` clean.**
 
 ### Measured budgets (M0 release build)
 
@@ -80,7 +80,19 @@ Java detection on this machine finds all four installed runtimes and picks Adopt
 for Java 21, Mojang's `java-runtime-epsilon` for 25, and correctly refuses to substitute
 anything for a Java 8 requirement.
 
-Try it: `ds versions`, `ds resolve 1.21.11`, `ds prepare 1.5.2`, `ds java 21`.
+The exact launch command builds correctly for both format generations:
+
+- **1.21.11** — Java 21 selected, 76 classpath entries, working directory inside the
+  instance, `--gameDir` isolated and `--assetsDir` shared. The Windows-only
+  `-XX:HeapDumpPath` argument appears; the macOS-only `-XstartOnFirstThread` and the
+  x86-only `-Xss1M` correctly do not.
+- **1.5.2** — the pre-1.13 positional `minecraftArguments` form, with the launcher
+  supplying `-cp` and `-Djava.library.path` itself.
+
+The spawn path is exercised in tests by starting a real JVM and reading its piped stderr.
+
+Try it: `ds versions`, `ds resolve 1.21.11`, `ds prepare 1.5.2`, `ds java 21`,
+`ds new Test 1.21.11`, `ds dry-run test`.
 
 ---
 
@@ -128,14 +140,19 @@ The full Microsoft chain, plus account storage with refresh tokens in the OS key
 
 1. **Natives extraction** — unpack the classified jars per-instance, honouring
    `extract.exclude`. Per-instance rather than shared because a running JVM holds file
-   locks on its native DLLs.
+   locks on its native DLLs. Needed for pre-1.19 versions only.
 2. **Java download** — fetch a runtime when nothing installed matches, via Mojang's runtime
-   manifest with an Adoptium fallback. Detection already works; only the download is
-   missing, and on this machine 21 and 25 are already satisfied.
-3. **Instance directories** — create the isolated game directory and materialise legacy
-   assets into it.
-4. **Launch** — build the argument vector and spawn. M2 is done when 1.21.11, 26.2 and one
-   `pre-1.6`-era version all reach the main menu.
+   manifest with an Adoptium fallback. Detection works; only the download is missing.
+   Blocks 1.5.2 (needs Java 8, not installed here); 21 and 25 are already satisfied.
+3. **Materialise legacy assets** into the instance for `virtual` and `map_to_resources`
+   layouts. The code exists in `assets::materialise`; it is not yet called from prepare.
+4. **Wire `ds launch`** — prepare, then build, then spawn, with a real session from
+   `ds-auth`.
+
+**M2's completion criterion is blocked.** "Reaches the main menu" needs a real session
+token, which needs Mojang approval. Starting the game with a placeholder token is exactly
+what a cracked launcher does and is out of scope permanently, so that last step waits.
+Everything up to it is verifiable now via `ds dry-run`.
 
 ---
 
@@ -190,7 +207,7 @@ Full reasoning in `ARCHITECTURE.md`.
 
 ```bash
 source ./env.sh
-cargo test          # 186 tests
+cargo test          # 214 tests
 ./scripts/check.sh  # fmt, clippy -D warnings, test, tsc
 ./scripts/build.sh  # release binary + installer
 
@@ -198,6 +215,8 @@ cargo test          # 186 tests
 ./target/debug/ds resolve 26.2    # resolve a version end to end
 ./target/debug/ds prepare 1.5.2   # download everything a version needs
 ./target/debug/ds java 21         # detected runtimes, and which one would be used
+./target/debug/ds new Test 1.21.11
+./target/debug/ds dry-run test    # the exact command that would launch
 ```
 
 The toolchain is portable and deliberately not on `PATH`; `env.sh` sets it up.
