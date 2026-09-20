@@ -1,0 +1,25 @@
+[package]
+name = "ds-net"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "HTTP downloading: pooling, retry, resume, verification"
+
+[lints]
+workspace = true
+
+[dependencies]
+ds-store = { version = "0.1.0", path = "../ds-store" }
+thiserror.workspace = true
+
+# rustls rather than native-tls: no OpenSSL to find or cross-compile on Linux.
+# `stream` is what allows a 31 MB client jar to be written as it arrives instead
+# of being buffered whole, which would land directly in the memory budget.
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "http2", "charset", "stream"] }
+tokio = { version = "1", features = ["rt", "fs", "io-util", "sync", "time", "macros"] }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+wiremock = "0.6"
+tempfile = "3"

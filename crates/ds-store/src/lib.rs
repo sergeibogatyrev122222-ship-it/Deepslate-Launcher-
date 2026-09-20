@@ -140,6 +140,16 @@ impl Store {
         Ok(self.root.join("objects").join(shard).join(&hash))
     }
 
+    /// Where an in-progress download is staged.
+    ///
+    /// Inside the store rather than a system temp directory, for two reasons: a
+    /// partially downloaded file survives a restart and can be resumed with a
+    /// range request, and clearing the cache remains one directory delete.
+    pub fn staging_path_for(&self, hash: &str, algorithm: Algorithm) -> Result<PathBuf> {
+        let hash = normalise(hash, algorithm)?;
+        Ok(self.root.join("staging").join(format!("{hash}.partial")))
+    }
+
     /// Whether this object is already present.
     ///
     /// Presence alone is trusted: nothing enters the store without being

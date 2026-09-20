@@ -1123,6 +1123,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "ds-net"
+version = "0.1.0"
+dependencies = [
+ "ds-store",
+ "futures-util",
+ "reqwest",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "wiremock",
+]
+
+[[package]]
 name = "ds-store"
 version = "0.1.0"
 dependencies = [
