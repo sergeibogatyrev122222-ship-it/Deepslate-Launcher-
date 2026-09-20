@@ -21,7 +21,7 @@ Running state of the build. Updated as work lands, so picking this up cold costs
 | M8 — customization | Not started |
 | M9 — CurseForge, Linux, teardown | Not started |
 
-**114 tests passing, zero clippy warnings, `tsc` clean.**
+**129 tests passing, zero clippy warnings, `tsc` clean.**
 
 ### Measured budgets (M0 release build)
 
@@ -75,8 +75,7 @@ Zero I/O, so all of it is tested directly with no mock server.
 ## Next actions, in order
 
 1. **`ds-net`** — HTTP client with pooling, retry/backoff and resumable range requests.
-2. **`ds-store`** — the content-addressed store. `objects/<aa>/<hash>`; the filesystem is
-   the index, so there is no database.
+   The only remaining piece before real files can be fetched.
 3. **`ds-mc`** — manifest fetch and cache, `inheritsFrom` resolution (with cycle detection),
    asset index handling including the `legacy` and `pre-1.6` layouts.
    **Note the contract in `classpath::entries`:** whoever merges an inheritance chain must
@@ -140,7 +139,7 @@ Full reasoning in `ARCHITECTURE.md`. The short list:
 
 ```bash
 source ./env.sh
-cargo test          # 114 tests
+cargo test          # 129 tests
 ./scripts/check.sh  # fmt, clippy -D warnings, test, tsc
 ./scripts/build.sh  # release binary + installer
 ./target/debug/ds   # the dev CLI
