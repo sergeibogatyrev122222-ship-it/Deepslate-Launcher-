@@ -56,7 +56,11 @@ accounts, public client, loopback redirect URIs registered.
 
 ## What is built for M2 so far
 
-Zero I/O, so all of it is tested directly with no mock server.
+`ds-core` is pure - zero I/O, so all of it is tested directly with no mock server and no
+fixtures beyond one real manifest. `ds-store` is the one I/O piece so far, tested against
+real temporary directories.
+
+### ds-core
 
 - **`rules`** — library and argument rule evaluation. Semantics stated exactly in the
   module docs, because getting them wrong yields a missing native library rather than an
@@ -69,7 +73,10 @@ Zero I/O, so all of it is tested directly with no mock server.
   coordinate-to-path derivation that mod loader libraries depend on.
 - **`platform`** — OS/arch as an injectable value, so rules can be evaluated for every
   platform from one test run.
-- **`ds-store`** — the content-addressed store. `objects/<aa>/<hash>`; the filesystem is
+
+### ds-store
+
+- The content-addressed store. `objects/<aa>/<hash>`; the filesystem is
   the index, so there is no database. Verifies before admitting, stages writes through a
   rename, hard links into instances with a copy fallback.
 
