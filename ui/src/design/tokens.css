@@ -1,0 +1,249 @@
+/*
+ * Deepslate design tokens.
+ *
+ * Every visual decision in the app resolves to a token defined here. Components
+ * never hardcode a colour, a duration or a pixel size. Two reasons: themes
+ * become token overrides rather than a parallel stylesheet, and a user-supplied
+ * theme file uses exactly the same mechanism the built-in themes use.
+ *
+ * Naming is by ROLE, not by appearance. `--bg-raised`, not `--grey-800` - so a
+ * light theme redefines the same names without every one of them lying.
+ */
+
+:root {
+  /* ---- Type scale -------------------------------------------------------
+     Base 14px: this is a dense desktop tool, not a marketing page. Ratio ~1.22,
+     rounded to whole/half pixels so text stays crisp at 100% scaling. */
+  --text-xs: 11px;
+  --text-sm: 12.5px;
+  --text-base: 14px;
+  --text-md: 17px;
+  --text-lg: 21px;
+  --text-xl: 26px;
+  --text-2xl: 32px;
+
+  --leading-tight: 1.2;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.65;
+
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+
+  --tracking-tight: -0.011em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;
+
+  --font-sans: "Inter", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Mono", ui-monospace, monospace;
+
+  /* ---- Spacing ----------------------------------------------------------
+     4px base grid. Named by step, not by intent, because the same step serves
+     different intents in different contexts. */
+  --space-0: 0;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+
+  --radius-sm: 4px;
+  --radius-md: 7px;
+  --radius-lg: 11px;
+  --radius-full: 9999px;
+
+  /* ---- Motion -----------------------------------------------------------
+     Durations are short on purpose. A launcher is a tool that gets used many
+     times a day; animation should confirm what happened, never pace the user. */
+  --motion-instant: 80ms;
+  --motion-fast: 130ms;
+  --motion-base: 200ms;
+  --motion-slow: 320ms;
+
+  /* Decelerating curve: fast departure, soft arrival. Reads as responsive. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ---- Layout ------------------------------------------------------------ */
+  --sidebar-width: 232px;
+  --titlebar-height: 40px;
+  --content-max: 1080px;
+}
+
+/* ---- Dark theme (default) ------------------------------------------------
+   Cool, desaturated greys with a single saturated accent. Backgrounds step by
+   lightness only, so elevation reads without borders doing all the work. */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-base: #14161a;
+  --bg-raised: #1b1e24;
+  --bg-overlay: #22262e;
+  --bg-inset: #0f1114;
+  --bg-hover: #262b34;
+  --bg-active: #2e343f;
+
+  --fg-primary: #e8eaed;
+  --fg-secondary: #a8aeb8;
+  --fg-muted: #6e7681;
+  --fg-inverse: #14161a;
+
+  --border-subtle: #23272f;
+  --border-default: #2f343d;
+  --border-strong: #414855;
+
+  --accent: #4d9fff;
+  --accent-hover: #6bb0ff;
+  --accent-active: #3a8ae6;
+  --accent-fg: #0b1220;
+  --accent-subtle: #17293f;
+
+  --danger: #f2555a;
+  --danger-subtle: #3a1a1e;
+  --warning: #e5a13a;
+  --warning-subtle: #3a2c14;
+  --success: #46c08a;
+  --success-subtle: #143026;
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.45);
+  --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.55);
+
+  --focus-ring: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--accent);
+}
+
+/* ---- Light theme --------------------------------------------------------- */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-base: #fbfbfc;
+  --bg-raised: #ffffff;
+  --bg-overlay: #ffffff;
+  --bg-inset: #f1f2f5;
+  --bg-hover: #f0f1f4;
+  --bg-active: #e6e8ec;
+
+  --fg-primary: #1a1d23;
+  --fg-secondary: #4e545e;
+  --fg-muted: #858b95;
+  --fg-inverse: #ffffff;
+
+  --border-subtle: #eaebef;
+  --border-default: #dcdee3;
+  --border-strong: #c2c6cd;
+
+  --accent: #1f6feb;
+  --accent-hover: #1a5fd0;
+  --accent-active: #164fb0;
+  --accent-fg: #ffffff;
+  --accent-subtle: #e8f1fe;
+
+  --danger: #cf2f36;
+  --danger-subtle: #fdeced;
+  --warning: #9a6300;
+  --warning-subtle: #fdf3e0;
+  --success: #1a7f56;
+  --success-subtle: #e6f6ee;
+
+  --shadow-sm: 0 1px 2px rgb(16 22 33 / 0.06);
+  --shadow-md: 0 4px 12px rgb(16 22 33 / 0.09);
+  --shadow-lg: 0 12px 32px rgb(16 22 33 / 0.13);
+
+  --focus-ring: 0 0 0 2px var(--bg-base), 0 0 0 4px var(--accent);
+}
+
+/* Honour the OS preference only when the user has not chosen explicitly. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --bg-base: #fbfbfc;
+    --bg-raised: #ffffff;
+    --bg-overlay: #ffffff;
+    --bg-inset: #f1f2f5;
+    --bg-hover: #f0f1f4;
+    --bg-active: #e6e8ec;
+    --fg-primary: #1a1d23;
+    --fg-secondary: #4e545e;
+    --fg-muted: #858b95;
+    --fg-inverse: #ffffff;
+    --border-subtle: #eaebef;
+    --border-default: #dcdee3;
+    --border-strong: #c2c6cd;
+    --accent: #1f6feb;
+    --accent-hover: #1a5fd0;
+    --accent-active: #164fb0;
+    --accent-fg: #ffffff;
+    --accent-subtle: #e8f1fe;
+    --shadow-sm: 0 1px 2px rgb(16 22 33 / 0.06);
+    --shadow-md: 0 4px 12px rgb(16 22 33 / 0.09);
+    --shadow-lg: 0 12px 32px rgb(16 22 33 / 0.13);
+  }
+}
+
+/* Global, not per-component: a component that animates regardless is a bug. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-instant: 0ms;
+    --motion-fast: 0ms;
+    --motion-base: 0ms;
+    --motion-slow: 0ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---- Reset ---------------------------------------------------------------
+   Minimal and deliberate, not a vendored normalize.css. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg-base);
+  color: var(--fg-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+  letter-spacing: var(--tracking-tight);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* A desktop app is not a web page: text selection and drag-select are opt-in. */
+body {
+  user-select: none;
+  cursor: default;
+  overflow: hidden;
+}
+
+/* Visible focus for keyboard users only - every interactive element must show it. */
+:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-fg);
+}

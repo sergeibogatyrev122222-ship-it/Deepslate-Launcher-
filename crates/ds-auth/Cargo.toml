@@ -1,0 +1,41 @@
+[package]
+name = "ds-auth"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Microsoft account authentication for Deepslate"
+
+[lints]
+workspace = true
+
+[dependencies]
+base64 = "0.23.1"
+rand = "0.10.3"
+# `form` is needed for the OAuth token endpoint, which takes
+# application/x-www-form-urlencoded rather than JSON.
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "http2", "charset", "form"] }
+serde.workspace = true
+serde_json = "1.0.151"
+sha2 = "0.11.0"
+thiserror.workspace = true
+time = { version = "0.3.55", features = ["serde", "formatting", "parsing"] }
+tokio = { version = "1.53.1", features = ["rt", "macros", "net", "time", "io-util"] }
+url = "2.5.8"
+
+# Keyring backends are selected per platform rather than through default features.
+# keyring 4's defaults pull the full zbus/async-io D-Bus stack (~60 crates) onto
+# every target, including Windows where it is entirely unused.
+[target.'cfg(windows)'.dependencies]
+keyring = { version = "4.2", default-features = false, features = ["v1", "windows-native-keyring-store"] }
+
+# zbus rather than dbus: pure Rust, so no libdbus C dependency to install or
+# cross-compile.
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "4.2", default-features = false, features = ["v1", "zbus-secret-service-keyring-store"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+keyring = { version = "4.2", default-features = false, features = ["v1", "apple-native-keyring-store"] }
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }
+wiremock = "0.6.5"

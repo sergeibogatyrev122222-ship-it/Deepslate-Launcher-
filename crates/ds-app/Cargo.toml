@@ -1,0 +1,32 @@
+[package]
+name = "ds-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Deepslate launcher application shell"
+
+# The shipped executable is named for the product, not for the crate.
+[[bin]]
+name = "deepslate"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde.workspace = true
+tauri = { version = "2.11.6", features = [] }
+
+# Generates ui/src/ipc/bindings.ts from the command signatures, so a Rust
+# signature change the frontend has not adapted to fails `tsc` rather than
+# surfacing at runtime.
+#
+# Pinned exactly: tauri-specta has been in release candidate since 2024 and an
+# rc bump is a breaking change. Build-time only - if it ever breaks, the fallback
+# is ts-rs or hand-written types, with no runtime or data-format lock-in.
+tauri-specta = { version = "=2.0.0-rc.25", features = ["derive", "typescript"] }
+specta = "=2.0.0-rc.25"
+specta-typescript = "=0.0.12"
