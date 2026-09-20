@@ -12,7 +12,7 @@ Running state of the build. Updated as work lands, so picking this up cold costs
 |---|---|
 | M0 — foundation, budgets | **Done.** Window runs, budgets measured and passing |
 | M1 — Microsoft sign-in | **Code complete, not verified live.** Blocked on Mojang approval |
-| M2 — vanilla launch | **In progress.** Resolution and downloading work against live Mojang servers; assets, Java and spawn remain |
+| M2 — vanilla launch | **In progress.** A version's files download completely and Java is detected; natives extraction and the spawn remain |
 | M3 — design system + UI | Not started |
 | M4 — mod loaders | Not started |
 | M5 — content browser (Modrinth) | Not started |
@@ -21,7 +21,7 @@ Running state of the build. Updated as work lands, so picking this up cold costs
 | M8 — customization | Not started |
 | M9 — CurseForge, Linux, teardown | Not started |
 
-**161 tests passing, zero clippy warnings, `tsc` clean.**
+**186 tests passing, zero clippy warnings, `tsc` clean.**
 
 ### Measured budgets (M0 release build)
 
@@ -68,7 +68,19 @@ Not fixtures — the real version list, 915 versions, fetched and resolved:
 Gaps on legacy versions are correct: natives-only libraries are excluded because they are
 extracted rather than loaded, and 1.8.9 genuinely ships LWJGL twice at different versions.
 
-Try it: `./target/debug/ds versions` and `./target/debug/ds resolve 1.21.11`.
+Whole versions download end to end:
+
+| Version | Files | Size | Time | Layout |
+|---|---|---|---|---|
+| 1.5.2 | 479 | 51.7 MB | 3.5s | `MapToResources`, 749 objects but 468 distinct |
+| 1.21.11 | 4667 | 526.3 MB | 39.1s | `Hashed`, 4591 objects, 76 classpath entries |
+| 1.5.2 again | 0 | 0 MB | 0.1s | everything already cached |
+
+Java detection on this machine finds all four installed runtimes and picks Adoptium 21.0.11
+for Java 21, Mojang's `java-runtime-epsilon` for 25, and correctly refuses to substitute
+anything for a Java 8 requirement.
+
+Try it: `ds versions`, `ds resolve 1.21.11`, `ds prepare 1.5.2`, `ds java 21`.
 
 ---
 
@@ -99,7 +111,12 @@ range requests, retry narrowed to 5xx/408/429.
 
 ### ds-mc — the Minecraft side
 
-Version catalogue and `inheritsFrom` resolution with cycle detection and a depth cap.
+Version catalogue, `inheritsFrom` resolution with cycle detection and a depth cap, asset
+indexes across all three historical layouts, whole-version preparation, and Java discovery.
+
+Java selection requires an **exact** major version. Minecraft declares a precise
+requirement and substituting a "close enough" runtime turns a clear "needs Java 8" into an
+unexplained crash.
 
 ### ds-auth — sign-in
 
@@ -109,14 +126,14 @@ The full Microsoft chain, plus account storage with refresh tokens in the OS key
 
 ## Next actions, in order
 
-1. **Assets** — fetch and parse the asset index, then the objects. Includes the `legacy`
-   and `pre-1.6` layouts, which need materialising into a real directory tree because
-   those versions read assets by path rather than by hash.
-2. **Java** — discovery including Mojang's own runtime directories
-   (`%LOCALAPPDATA%/Packages/Microsoft.4297127D64EC6_*/LocalCache/Local/runtime` already
-   holds `java-runtime-delta` and `java-runtime-epsilon` on this machine), then download
-   when nothing satisfies the version's requirement.
-3. **Natives** — extract per-instance, honouring `extract.exclude`.
+1. **Natives extraction** — unpack the classified jars per-instance, honouring
+   `extract.exclude`. Per-instance rather than shared because a running JVM holds file
+   locks on its native DLLs.
+2. **Java download** — fetch a runtime when nothing installed matches, via Mojang's runtime
+   manifest with an Adoptium fallback. Detection already works; only the download is
+   missing, and on this machine 21 and 25 are already satisfied.
+3. **Instance directories** — create the isolated game directory and materialise legacy
+   assets into it.
 4. **Launch** — build the argument vector and spawn. M2 is done when 1.21.11, 26.2 and one
    `pre-1.6`-era version all reach the main menu.
 
@@ -163,6 +180,9 @@ Full reasoning in `ARCHITECTURE.md`.
   This bit `AssetIndexRef.totalSize`.
 - **Bash eats backticks inside `node -e '...'`.** Patch scripts with backticks in them go
   to a file via a quoted heredoc first.
+- **Java version strings must compare numerically.** Lexicographically `21.0.7` beats
+  `21.0.11`, which silently selects an older patch while appearing to work. This is the
+  opposite case to Minecraft version ids: Java versions genuinely have numeric components.
 
 ---
 
@@ -170,12 +190,14 @@ Full reasoning in `ARCHITECTURE.md`.
 
 ```bash
 source ./env.sh
-cargo test          # 161 tests
+cargo test          # 186 tests
 ./scripts/check.sh  # fmt, clippy -D warnings, test, tsc
 ./scripts/build.sh  # release binary + installer
 
 ./target/debug/ds versions        # live version list from Mojang
 ./target/debug/ds resolve 26.2    # resolve a version end to end
+./target/debug/ds prepare 1.5.2   # download everything a version needs
+./target/debug/ds java 21         # detected runtimes, and which one would be used
 ```
 
 The toolchain is portable and deliberately not on `PATH`; `env.sh` sets it up.
