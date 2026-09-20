@@ -1123,6 +1123,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "ds-mc"
+version = "0.1.0"
+dependencies = [
+ "ds-core",
+ "ds-net",
+ "ds-store",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.20",
+ "tokio",
+ "wiremock",
+]
+
+[[package]]
 name = "ds-net"
 version = "0.1.0"
 dependencies = [

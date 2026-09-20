@@ -278,6 +278,70 @@ impl Downloader {
         Ok(path)
     }
 
+    /// Fetch a document that has no hash to verify against.
+    ///
+    /// The top-level version list has no published hash, so it can only be
+    /// fetched and trusted over TLS. Per-version JSONs DO have one, published
+    /// in that list - those should go through [`Self::fetch`] instead so they
+    /// are verified and cached like any other artifact.
+    ///
+    /// Retries on the same narrow set as [`Self::fetch`]: 5xx, 408 and 429.
+    pub async fn fetch_text(&self, url: &str) -> Result<String> {
+        let _permit = self.permits.acquire().await;
+
+        let mut attempt = 0;
+        let mut last: Option<NetError> = None;
+
+        while attempt < self.max_attempts {
+            attempt += 1;
+            match self.attempt_text(url).await {
+                Ok(body) => return Ok(body),
+                Err(error) if !error.is_retryable() => return Err(error),
+                Err(error) => {
+                    last = Some(error);
+                    if attempt < self.max_attempts {
+                        let wait = Duration::from_millis(200 * (1 << (attempt - 1).min(5)));
+                        tokio::time::sleep(wait).await;
+                    }
+                }
+            }
+        }
+
+        Err(NetError::Exhausted {
+            url: url.to_owned(),
+            attempts: attempt,
+            source: Box::new(last.unwrap_or(NetError::Http {
+                url: url.to_owned(),
+                status: 0,
+            })),
+        })
+    }
+
+    async fn attempt_text(&self, url: &str) -> Result<String> {
+        let response = self
+            .client
+            .get(url)
+            .send()
+            .await
+            .map_err(|source| NetError::Transport {
+                url: url.to_owned(),
+                source,
+            })?;
+
+        let status = response.status();
+        if !status.is_success() {
+            return Err(NetError::Http {
+                url: url.to_owned(),
+                status: status.as_u16(),
+            });
+        }
+
+        response.text().await.map_err(|source| NetError::Transport {
+            url: url.to_owned(),
+            source,
+        })
+    }
+
     /// Fetch many artifacts concurrently, reporting progress as each lands.
     ///
     /// Returns on the first failure rather than pressing on: a version missing

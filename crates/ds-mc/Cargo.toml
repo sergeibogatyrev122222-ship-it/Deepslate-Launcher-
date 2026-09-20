@@ -1,0 +1,22 @@
+[package]
+name = "ds-mc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Minecraft version catalogue, inheritance resolution, asset indexes"
+
+[lints]
+workspace = true
+
+[dependencies]
+ds-core = { version = "0.1.0", path = "../ds-core" }
+ds-net = { version = "0.1.0", path = "../ds-net" }
+ds-store = { version = "0.1.0", path = "../ds-store" }
+serde.workspace = true
+serde_json = "1"
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+wiremock = "0.6"
+tempfile = "3"
