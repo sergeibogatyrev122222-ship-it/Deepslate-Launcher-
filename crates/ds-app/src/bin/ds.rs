@@ -34,6 +34,7 @@ COMMANDS:
     resolve <id>      Fetch a version, resolve inheritance, summarise it
     prepare <id>      Download everything a version needs
     java [major]      List detected Java runtimes, or pick one for a major version
+    java-install <c>  Download a Mojang Java runtime, e.g. jre-legacy
     instances         List instances
     new <name> <ver>  Create an instance
     dry-run <slug>    Build the launch command for an instance and print it
@@ -69,6 +70,10 @@ async fn main() -> ExitCode {
         (Some("prepare"), Some(id)) => prepare_version(id).await,
         (Some("prepare"), None) => Err("that command needs a version id".to_owned()),
         (Some("java"), major) => java_runtimes(major.map(String::as_str)),
+        (Some("java-install"), Some(component)) => java_install(component).await,
+        (Some("java-install"), None) => {
+            Err("that command needs a component, e.g. jre-legacy".to_owned())
+        }
         (Some("instances"), _) => list_instances(),
         (Some("new"), Some(name)) => new_instance(name, args.get(2).map(String::as_str)),
         (Some("new"), None) => Err("that command needs a name and a version".to_owned()),
@@ -264,7 +269,7 @@ async fn prepare_version(id: &str) -> Result<(), String> {
 }
 
 fn java_runtimes(major: Option<&str>) -> Result<(), String> {
-    let found = ds_mc::java::discover();
+    let found = ds_mc::java::discover(cache_dir().ok().as_deref());
 
     if found.is_empty() {
         println!("No Java runtimes found.");
@@ -363,7 +368,7 @@ async fn dry_run(slug: &str) -> Result<(), String> {
         .as_ref()
         .map(|j| j.major_version)
         .unwrap_or(8);
-    let runtimes = ds_mc::java::discover();
+    let runtimes = ds_mc::java::discover(Some(store.root()));
     let java =
         ds_mc::java::for_instance(instance.config().java_path.as_deref(), &runtimes, required)
             .ok_or_else(|| format!("no Java {required} installed; it would be downloaded"))?
@@ -447,6 +452,40 @@ async fn dry_run(slug: &str) -> Result<(), String> {
 
     println!();
     println!("Not launched: that needs a real session token.");
+    Ok(())
+}
+
+async fn java_install(component: &str) -> Result<(), String> {
+    let store = Store::open(cache_dir()?).map_err(|e| e.to_string())?;
+    let downloader = Downloader::default();
+    let platform = Platform::host().ok_or("unsupported platform")?;
+
+    println!(
+        "Installing {component} for {} {}...",
+        platform.os, platform.arch
+    );
+
+    let started = std::time::Instant::now();
+    let mut last = 0_u64;
+
+    let home = ds_mc::runtime::install(&downloader, &store, component, &platform, |progress| {
+        if progress.completed - last >= 50 || progress.completed == progress.total {
+            last = progress.completed;
+            println!("  {} / {} files", progress.completed, progress.total);
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    println!();
+    println!("installed in {:.1}s", started.elapsed().as_secs_f64());
+    println!("home: {}", home.display());
+
+    // The proof that it worked is that discovery can read it back.
+    match ds_mc::java::from_home(&home, ds_mc::JavaSource::Managed) {
+        Some(found) => println!("verified: Java {} ({})", found.major, found.version),
+        None => println!("WARNING: installed, but not recognisable as a Java home"),
+    }
     Ok(())
 }
 

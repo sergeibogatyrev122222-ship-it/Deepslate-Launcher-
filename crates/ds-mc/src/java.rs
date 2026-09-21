@@ -105,8 +105,15 @@ fn executable_in(home: &Path) -> Option<PathBuf> {
 ///
 /// Each entry is a directory whose *children* are candidate homes, except where
 /// noted. Kept as data so adding a vendor is a one-line change.
-fn search_roots() -> Vec<(PathBuf, Source)> {
+fn search_roots(managed_root: Option<&Path>) -> Vec<(PathBuf, Source)> {
     let mut roots = Vec::new();
+
+    // Runtimes this launcher downloaded, laid out as
+    // <cache>/java/<platform>/<component>/. Searched first and ranked highest:
+    // if we fetched it, it is the one we chose for this exact requirement.
+    if let Some(root) = managed_root {
+        roots.push((root.join("java"), Source::Managed));
+    }
 
     if let Ok(home) = std::env::var("JAVA_HOME") {
         // JAVA_HOME is itself a home, not a directory of homes.
@@ -164,12 +171,18 @@ fn search_roots() -> Vec<(PathBuf, Source)> {
 
 /// Find every usable Java runtime on this machine.
 ///
-/// Mojang's own runtime directories are searched, so a user who has run the
+/// `managed_root` is the launcher's cache directory, holding runtimes it
+/// downloaded itself. Passing `None` searches only the system. Omitting it when
+/// one exists means a downloaded runtime is invisible and gets fetched again on
+/// every launch, which is exactly what happened the first time this was wired
+/// up.
+///
+/// Mojang's own runtime directories are searched too, so a user who has run the
 /// official launcher usually needs no download at all.
-pub fn discover() -> Vec<JavaInstallation> {
+pub fn discover(managed_root: Option<&Path>) -> Vec<JavaInstallation> {
     let mut found: Vec<JavaInstallation> = Vec::new();
 
-    for (root, source) in search_roots() {
+    for (root, source) in search_roots(managed_root) {
         // JAVA_HOME points at a home directly.
         if let Some(installation) = from_home(&root, source) {
             push_unique(&mut found, installation);
@@ -427,6 +440,46 @@ mod tests {
         );
     }
 
+    /// Regression: a downloaded runtime used to be invisible to discovery, so
+    /// it was re-fetched on every launch.
+    #[test]
+    fn a_managed_runtime_is_discovered_and_preferred() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir
+            .path()
+            .join("java")
+            .join("windows-x64")
+            .join("jre-legacy");
+        std::fs::create_dir_all(home.join("bin")).unwrap();
+        std::fs::write(
+            home.join("release"),
+            "JAVA_VERSION=\"1.8.0_51\"
+",
+        )
+        .unwrap();
+
+        let binary = if cfg!(windows) { "javaw.exe" } else { "java" };
+        std::fs::write(home.join("bin").join(binary), b"not really a jvm").unwrap();
+
+        let found = discover(Some(dir.path()));
+        let managed: Vec<&JavaInstallation> = found
+            .iter()
+            .filter(|i| i.source == Source::Managed)
+            .collect();
+
+        assert_eq!(
+            managed.len(),
+            1,
+            "the managed runtime was not found: {found:?}"
+        );
+        assert_eq!(managed[0].major, 8);
+        assert_eq!(
+            select(&found, 8).map(|i| i.source),
+            Some(Source::Managed),
+            "a managed runtime should win for its major version"
+        );
+    }
+
     #[test]
     fn without_an_override_discovery_decides() {
         let installed = vec![installation(21, "21.0.11", Source::SystemInstall)];
@@ -443,7 +496,7 @@ mod tests {
     /// an empty list is a normal answer.
     #[test]
     fn discovery_is_infallible() {
-        let found = discover();
+        let found = discover(None);
         for installation in &found {
             assert!(installation.major > 0);
             assert!(installation.executable.is_file(), "{installation:?}");

@@ -516,7 +516,7 @@ mod tests {
     fn the_spawn_path_starts_a_real_jvm_and_captures_its_output() {
         use std::io::Read as _;
 
-        let runtimes = crate::java::discover();
+        let runtimes = crate::java::discover(None);
         let Some(java) = runtimes.first() else {
             eprintln!("skipped: no Java installed on this machine");
             return;
@@ -554,7 +554,7 @@ mod tests {
     /// error rather than silently starting somewhere else.
     #[test]
     fn spawning_into_a_missing_directory_is_an_error() {
-        let runtimes = crate::java::discover();
+        let runtimes = crate::java::discover(None);
         let Some(java) = runtimes.first() else {
             return;
         };

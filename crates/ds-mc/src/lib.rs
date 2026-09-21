@@ -12,7 +12,9 @@ pub mod inherit;
 pub mod instance;
 pub mod java;
 pub mod launch;
+pub mod natives;
 pub mod prepare;
+pub mod runtime;
 
 pub use assets::{AssetIndex, Layout};
 pub use catalog::{Catalog, CatalogError, VersionEntry, VersionList};
