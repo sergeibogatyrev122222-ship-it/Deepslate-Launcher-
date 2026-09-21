@@ -2,7 +2,7 @@
 
 Running state of the build. Updated as work lands, so picking this up cold costs nothing.
 
-**Last updated:** 2026-09-20, end of second session.
+**Last updated:** 2026-09-21.
 
 ---
 
@@ -12,7 +12,7 @@ Running state of the build. Updated as work lands, so picking this up cold costs
 |---|---|
 | M0 — foundation, budgets | **Done.** Window runs, budgets measured and passing |
 | M1 — Microsoft sign-in | **Code complete, not verified live.** Blocked on Mojang approval |
-| M2 — vanilla launch | **Nearly done.** Files download, Java is detected, instances are isolated, and the exact launch command builds and spawns. Only natives extraction, Java download, and the live launch remain |
+| M2 — vanilla launch | **Code complete.** Everything works end to end up to the spawn. The final live launch is blocked on Mojang approval, not on code |
 | M3 — design system + UI | Not started |
 | M4 — mod loaders | Not started |
 | M5 — content browser (Modrinth) | Not started |
@@ -21,7 +21,7 @@ Running state of the build. Updated as work lands, so picking this up cold costs
 | M8 — customization | Not started |
 | M9 — CurseForge, Linux, teardown | Not started |
 
-**214 tests passing, zero clippy warnings, `tsc` clean.**
+**236 tests passing, zero clippy warnings, `tsc` clean.**
 
 ### Measured budgets (M0 release build)
 
@@ -91,6 +91,16 @@ The exact launch command builds correctly for both format generations:
 
 The spawn path is exercised in tests by starting a real JVM and reading its piped stderr.
 
+**Instances are staged completely.** The disk cost shows why the store exists:
+
+| Instance | Directory size |
+|---|---|
+| 1.21.11 (modern) | **1.0 KB** — the whole 526 MB installation is in the shared store |
+| 1.5.2 (legacy) | 47 MB — pre-1.6 opens assets by path, so it needs its own copy |
+
+1.5.2 stages 14 natives (OpenAL, jinput, lwjgl) and 749 assets into
+`minecraft/resources/`. 1.21.11 stages neither and leaves its instance directory empty.
+
 Try it: `ds versions`, `ds resolve 1.21.11`, `ds prepare 1.5.2`, `ds java 21`,
 `ds new Test 1.21.11`, `ds dry-run test`.
 
@@ -124,11 +134,13 @@ range requests, retry narrowed to 5xx/408/429.
 ### ds-mc — the Minecraft side
 
 Version catalogue, `inheritsFrom` resolution with cycle detection and a depth cap, asset
-indexes across all three historical layouts, whole-version preparation, and Java discovery.
+indexes across all three historical layouts, whole-version preparation, natives extraction,
+Java discovery and download, isolated instances, and launch command construction.
 
 Java selection requires an **exact** major version. Minecraft declares a precise
 requirement and substituting a "close enough" runtime turns a clear "needs Java 8" into an
-unexplained crash.
+unexplained crash. When nothing matches, `runtime::install` fetches the right one from
+Mojang - jre-legacy took 3.9s for 192 files.
 
 ### ds-auth — sign-in
 
@@ -136,23 +148,23 @@ The full Microsoft chain, plus account storage with refresh tokens in the OS key
 
 ---
 
-## Next actions, in order
+## Next actions
 
-1. **Natives extraction** — unpack the classified jars per-instance, honouring
-   `extract.exclude`. Per-instance rather than shared because a running JVM holds file
-   locks on its native DLLs. Needed for pre-1.19 versions only.
-2. **Java download** — fetch a runtime when nothing installed matches, via Mojang's runtime
-   manifest with an Adoptium fallback. Detection works; only the download is missing.
-   Blocks 1.5.2 (needs Java 8, not installed here); 21 and 25 are already satisfied.
-3. **Materialise legacy assets** into the instance for `virtual` and `map_to_resources`
-   layouts. The code exists in `assets::materialise`; it is not yet called from prepare.
-4. **Wire `ds launch`** — prepare, then build, then spawn, with a real session from
-   `ds-auth`.
+**M2 is code complete.** `ds launch <slug>` signs in, downloads, stages and spawns. The
+only untested step is the spawn itself, because it needs a real session token and Mojang
+has not approved the app registration yet. Starting the game with a placeholder token is
+what a cracked launcher does and is out of scope permanently, so that step waits.
 
-**M2's completion criterion is blocked.** "Reaches the main menu" needs a real session
-token, which needs Mojang approval. Starting the game with a placeholder token is exactly
-what a cracked launcher does and is out of scope permanently, so that last step waits.
-Everything up to it is verifiable now via `ds dry-run`.
+Run `ds dry-run <slug>` to see everything up to the spawn, including the exact command.
+
+Two things can be done now:
+
+1. **M3 — design system and UI.** The largest remaining piece, and entirely unblocked.
+   Tokens exist in `ui/src/design/tokens.css`; primitives and screens do not.
+2. **M4 — mod loaders.** Fabric, Quilt and NeoForge are JSON profile merges and the
+   inheritance machinery already handles them. Forge is the hard one.
+
+When approval lands, `ds launch` should work with no code change.
 
 ---
 
@@ -197,6 +209,11 @@ Full reasoning in `ARCHITECTURE.md`.
   This bit `AssetIndexRef.totalSize`.
 - **Bash eats backticks inside `node -e '...'`.** Patch scripts with backticks in them go
   to a file via a quoted heredoc first.
+- **A Windows path in TOML needs a literal string** (`'C:path'`) or doubled backslashes.
+  A basic string treats `P` as an invalid escape and the whole file fails to parse.
+- **Downloading a runtime is useless if discovery cannot see it.** `java::discover` searched
+  system locations only at first, so a freshly downloaded runtime was invisible and would be
+  re-fetched on every launch. It takes the cache root now.
 - **Java version strings must compare numerically.** Lexicographically `21.0.7` beats
   `21.0.11`, which silently selects an older patch while appearing to work. This is the
   opposite case to Minecraft version ids: Java versions genuinely have numeric components.
@@ -207,7 +224,7 @@ Full reasoning in `ARCHITECTURE.md`.
 
 ```bash
 source ./env.sh
-cargo test          # 214 tests
+cargo test          # 236 tests
 ./scripts/check.sh  # fmt, clippy -D warnings, test, tsc
 ./scripts/build.sh  # release binary + installer
 
