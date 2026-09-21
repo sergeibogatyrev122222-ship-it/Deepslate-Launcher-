@@ -363,7 +363,29 @@ async fn dry_run(slug: &str) -> Result<(), String> {
     let platform = Platform::host().ok_or("unsupported platform")?;
     let features = Features::new();
 
-    let required = manifest
+    println!("Preparing {version_id}...");
+    let mut last = 0_u64;
+    let prepared = ds_mc::prepare(
+        &downloader,
+        &store,
+        manifest,
+        &platform,
+        &features,
+        |progress| {
+            if progress.completed - last >= 500 || progress.completed == progress.total {
+                last = progress.completed;
+                println!("  {} / {} files", progress.completed, progress.total);
+            }
+        },
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let staged = ds_mc::stage(&prepared, &instance, &store, &platform, &features)
+        .map_err(|e| e.to_string())?;
+
+    let required = prepared
+        .manifest
         .java_version
         .as_ref()
         .map(|j| j.major_version)
@@ -371,28 +393,12 @@ async fn dry_run(slug: &str) -> Result<(), String> {
     let runtimes = ds_mc::java::discover(Some(store.root()));
     let java =
         ds_mc::java::for_instance(instance.config().java_path.as_deref(), &runtimes, required)
-            .ok_or_else(|| format!("no Java {required} installed; it would be downloaded"))?
+            .ok_or_else(|| {
+                format!("no Java {required} installed; run: ds java-install <component>")
+            })?
             .to_path_buf();
 
-    let work = ds_mc::plan(&manifest, &platform, &features);
-    let mut classpath: Vec<PathBuf> = Vec::new();
-    for artifact in &work.libraries {
-        classpath.push(
-            store
-                .path_for(&artifact.hash, ds_store::Algorithm::Sha1)
-                .map_err(|e| e.to_string())?,
-        );
-    }
-    if let Some(client) = &work.client {
-        classpath.push(
-            store
-                .path_for(&client.hash, ds_store::Algorithm::Sha1)
-                .map_err(|e| e.to_string())?,
-        );
-    }
-
-    // A placeholder session. This build has no path that launches the game with
-    // one: the command is printed, never spawned.
+    let assets_dir = ds_mc::assets_dir_for(&prepared, &store);
     let session = ds_mc::Session {
         username: "<player>".to_owned(),
         uuid: "<uuid>".to_owned(),
@@ -401,24 +407,27 @@ async fn dry_run(slug: &str) -> Result<(), String> {
         xuid: None,
     };
 
-    let assets_root = store.root().join("assets");
     let command = ds_mc::launch::build(
-        &manifest,
+        &prepared.manifest,
         &ds_mc::LaunchContext {
             java: &java,
             instance: &instance,
             session: &session,
-            classpath: &classpath,
-            assets_root: &assets_root,
-            assets_index: manifest.assets.as_deref().unwrap_or("legacy"),
+            classpath: &prepared.classpath,
+            assets_root: &assets_dir,
+            assets_index: prepared.manifest.assets.as_deref().unwrap_or("legacy"),
             platform: &platform,
         },
     )
     .map_err(|e| e.to_string())?;
 
-    println!("instance   : {} ({})", instance.slug(), version_id);
+    println!();
+    println!("instance   : {} ({version_id})", instance.slug());
     println!("java       : {} (needs Java {required})", java.display());
-    println!("classpath  : {} entries", classpath.len());
+    println!("classpath  : {} entries", prepared.classpath.len());
+    println!("natives    : {} extracted", staged.natives_written);
+    println!("assets     : {} materialised", staged.assets_materialised);
+    println!("assets dir : {}", assets_dir.display());
     println!("working dir: {}", command.working_dir.display());
     println!("arguments  : {} total", command.args.len());
     println!();
@@ -426,11 +435,10 @@ async fn dry_run(slug: &str) -> Result<(), String> {
     let redacted = command.redacted(&session);
     let main = redacted
         .iter()
-        .position(|a| Some(a.as_str()) == manifest.main_class.as_deref());
+        .position(|a| Some(a.as_str()) == prepared.manifest.main_class.as_deref());
 
     println!("--- JVM arguments ---");
     for arg in &redacted[..main.unwrap_or(0)] {
-        // The classpath is thousands of characters; show its shape instead.
         if arg.len() > 120 {
             println!(
                 "  <{} chars: {} entries>",
@@ -451,7 +459,7 @@ async fn dry_run(slug: &str) -> Result<(), String> {
     }
 
     println!();
-    println!("Not launched: that needs a real session token.");
+    println!("Everything is in place. Not launched: that needs a real session token.");
     Ok(())
 }
 

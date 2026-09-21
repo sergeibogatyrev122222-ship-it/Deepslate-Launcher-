@@ -22,4 +22,4 @@ pub use inherit::{merge, resolve, InheritError, ResolveError};
 pub use instance::{Instance, InstanceConfig, InstanceError};
 pub use java::{JavaInstallation, Source as JavaSource};
 pub use launch::{LaunchCommand, LaunchContext, LaunchError, Session};
-pub use prepare::{plan, prepare, Plan, Prepared};
+pub use prepare::{assets_dir_for, plan, prepare, stage, Plan, Prepared, Staged};

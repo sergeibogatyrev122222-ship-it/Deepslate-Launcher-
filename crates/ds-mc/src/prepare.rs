@@ -17,8 +17,9 @@ use ds_core::version::VersionManifest;
 use ds_net::{Artifact, Downloader, Progress};
 use ds_store::{Algorithm, Store};
 
-use crate::assets::AssetIndex;
+use crate::assets::{self, AssetIndex, Layout};
 use crate::catalog::CatalogError;
+use crate::instance::Instance;
 
 type Result<T> = std::result::Result<T, CatalogError>;
 
@@ -178,6 +179,86 @@ where
         native_jars,
         bytes_fetched,
     })
+}
+
+/// What staging an instance actually did.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Staged {
+    pub natives_written: usize,
+    pub assets_materialised: usize,
+}
+
+/// Put everything in place inside an instance.
+///
+/// Two jobs, both no-ops for a modern version:
+///
+/// - **Natives** are unpacked into the instance's own directory. Pre-1.19 only;
+///   newer versions ship natives as ordinary libraries.
+/// - **Legacy assets** are materialised into a named tree, because `legacy` and
+///   `pre-1.6` versions open assets by path rather than by hash. Modern
+///   versions read the shared store directly and cost no extra disk.
+pub fn stage(
+    prepared: &Prepared,
+    instance: &Instance,
+    store: &Store,
+    platform: &Platform,
+    features: &Features,
+) -> Result<Staged> {
+    let mut staged = Staged::default();
+
+    if !prepared.native_jars.is_empty() {
+        // Exclusions are per-library, but in practice every natives jar in a
+        // version lists the same ones (META-INF/). Collecting them into one set
+        // avoids re-opening each jar once per library.
+        let mut exclude: Vec<String> = Vec::new();
+        for library in prepared.manifest.applicable_libraries(platform, features) {
+            if let Some(extract) = &library.extract {
+                for pattern in &extract.exclude {
+                    if !exclude.contains(pattern) {
+                        exclude.push(pattern.clone());
+                    }
+                }
+            }
+        }
+
+        staged.natives_written =
+            crate::natives::extract_all(&prepared.native_jars, &instance.natives_dir(), &exclude)
+                .map_err(|error| CatalogError::Read {
+                id: "natives".to_owned(),
+                source: std::io::Error::other(error.to_string()),
+            })?;
+    }
+
+    if let (Some(index), Some(index_id)) = (&prepared.asset_index, &prepared.asset_index_id) {
+        let assets_root = store.root().join("assets");
+        let target = match index.layout() {
+            Layout::Hashed => None,
+            Layout::Virtual => Some(assets::virtual_dir(&assets_root, index_id)),
+            Layout::MapToResources => Some(assets::resources_dir(&instance.game_dir())),
+        };
+
+        if let Some(target) = target {
+            staged.assets_materialised = index.materialise(store, &target)?;
+        }
+    }
+
+    Ok(staged)
+}
+
+/// Where the game should be told to look for assets.
+///
+/// A `virtual` version is pointed at its materialised tree rather than the
+/// hashed store; `map_to_resources` reads from the game directory and the value
+/// here is unused; everything modern uses the store.
+pub fn assets_dir_for(prepared: &Prepared, store: &Store) -> PathBuf {
+    let assets_root = store.root().join("assets");
+
+    match (&prepared.asset_index, &prepared.asset_index_id) {
+        (Some(index), Some(index_id)) if index.layout() == Layout::Virtual => {
+            assets::virtual_dir(&assets_root, index_id)
+        }
+        _ => assets_root,
+    }
 }
 
 #[cfg(test)]
