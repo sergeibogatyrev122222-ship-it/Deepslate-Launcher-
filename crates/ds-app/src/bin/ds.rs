@@ -38,6 +38,7 @@ COMMANDS:
     instances         List instances
     new <name> <ver>  Create an instance
     dry-run <slug>    Build the launch command for an instance and print it
+    launch <slug>     Sign in, prepare, and start the game
 ";
 
 /// `%APPDATA%/Deepslate` on Windows, the platform equivalent elsewhere.
@@ -79,6 +80,8 @@ async fn main() -> ExitCode {
         (Some("new"), None) => Err("that command needs a name and a version".to_owned()),
         (Some("dry-run"), Some(slug)) => dry_run(slug).await,
         (Some("dry-run"), None) => Err("that command needs an instance slug".to_owned()),
+        (Some("launch"), Some(slug)) => launch(slug).await,
+        (Some("launch"), None) => Err("that command needs an instance slug".to_owned()),
         (Some("logout"), Some(id)) => logout(id),
         (Some("switch"), Some(id)) => switch(id),
         (Some("logout" | "switch"), None) => Err("that command needs an account uuid".to_owned()),
@@ -494,6 +497,126 @@ async fn java_install(component: &str) -> Result<(), String> {
         Some(found) => println!("verified: Java {} ({})", found.major, found.version),
         None => println!("WARNING: installed, but not recognisable as a Java home"),
     }
+    Ok(())
+}
+
+/// Sign in, prepare everything, and start the game.
+///
+/// The session comes from ds-auth - there is no path here that fabricates one.
+/// Until Mojang approves this build's app registration, this stops at sign-in
+/// with AppNotApproved, which is correct behaviour rather than a bug.
+async fn launch(slug: &str) -> Result<(), String> {
+    use std::io::BufRead as _;
+
+    let instance = ds_mc::Instance::load(&instances_dir()?, slug).map_err(|e| e.to_string())?;
+    let version_id = instance.config().version.clone();
+
+    // Sign in FIRST. Downloading half a gigabyte and only then discovering the
+    // session is dead wastes the user's time and bandwidth.
+    let accounts = open_store()?;
+    let account = accounts
+        .active()
+        .ok_or("no active account; run `ds login` first")?;
+    let refresh = accounts
+        .refresh_token(&account.id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("no stored credential for {}; run `ds login`", account.name))?;
+
+    println!("Signing in as {}...", account.name);
+    let signed_in = Flow::new().resume(&refresh).await.map_err(describe)?;
+
+    let session = ds_mc::Session {
+        username: signed_in.profile.name.clone(),
+        uuid: signed_in.profile.id.clone(),
+        access_token: signed_in.session.access_token.clone(),
+        user_type: "msa".to_owned(),
+        xuid: None,
+    };
+
+    let store = Store::open(cache_dir()?).map_err(|e| e.to_string())?;
+    let downloader = Downloader::default();
+    let catalog = Catalog::load(&downloader)
+        .await
+        .map_err(|e| e.to_string())?;
+    let manifest = catalog
+        .resolved(&downloader, &store, &version_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let platform = Platform::host().ok_or("unsupported platform")?;
+    let features = Features::new();
+
+    println!("Preparing {version_id}...");
+    let mut last = 0_u64;
+    let prepared = ds_mc::prepare(
+        &downloader,
+        &store,
+        manifest,
+        &platform,
+        &features,
+        |progress| {
+            if progress.completed - last >= 500 || progress.completed == progress.total {
+                last = progress.completed;
+                println!("  {} / {} files", progress.completed, progress.total);
+            }
+        },
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    ds_mc::stage(&prepared, &instance, &store, &platform, &features).map_err(|e| e.to_string())?;
+
+    let required = prepared
+        .manifest
+        .java_version
+        .as_ref()
+        .map(|j| j.major_version)
+        .unwrap_or(8);
+    let runtimes = ds_mc::java::discover(Some(store.root()));
+    let java =
+        ds_mc::java::for_instance(instance.config().java_path.as_deref(), &runtimes, required)
+            .ok_or_else(|| {
+                format!("no Java {required} installed; run: ds java-install <component>")
+            })?
+            .to_path_buf();
+
+    let assets_dir = ds_mc::assets_dir_for(&prepared, &store);
+    let command = ds_mc::launch::build(
+        &prepared.manifest,
+        &ds_mc::LaunchContext {
+            java: &java,
+            instance: &instance,
+            session: &session,
+            classpath: &prepared.classpath,
+            assets_root: &assets_dir,
+            assets_index: prepared.manifest.assets.as_deref().unwrap_or("legacy"),
+            platform: &platform,
+        },
+    )
+    .map_err(|e| e.to_string())?;
+
+    let started = std::time::Instant::now();
+    let mut child = ds_mc::launch::spawn(&command).map_err(|e| e.to_string())?;
+    println!(
+        "Started as {} in {} ms",
+        session.username,
+        started.elapsed().as_millis()
+    );
+    println!("---- game output ----");
+
+    // stderr carries crash output and the JVM's own complaints, which is what
+    // matters when a launch goes wrong.
+    if let Some(stderr) = child.stderr.take() {
+        for line in std::io::BufReader::new(stderr)
+            .lines()
+            .map_while(Result::ok)
+        {
+            println!("  {line}");
+        }
+    }
+
+    let status = child.wait().map_err(|e| e.to_string())?;
+    println!("---- exited: {status} ----");
     Ok(())
 }
 
